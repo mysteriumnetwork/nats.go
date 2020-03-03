@@ -2892,6 +2892,31 @@ func (nc *Conn) IsClosed() bool {
 	return nc.isClosed()
 }
 
+// Reopen will recreate the connection to the server.
+func (nc *Conn) Reopen() error {
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+
+	// Set our new status
+	nc.status = RECONNECTING
+	if nc.ptmr != nil {
+		nc.ptmr.Stop()
+	}
+	if nc.conn != nil {
+		nc.bw.Flush()
+		nc.conn.Close()
+		nc.conn = nil
+	}
+
+	// Create a new pending buffer to underpin the bufio Writer while
+	// we are reconnecting.
+	nc.pending = &bytes.Buffer{}
+	nc.bw = bufio.NewWriterSize(nc.pending, nc.Opts.ReconnectBufSize)
+
+	go nc.doReconnect()
+	return nc.err
+}
+
 // IsReconnecting tests if a Conn is reconnecting.
 func (nc *Conn) IsReconnecting() bool {
 	nc.mu.Lock()
